@@ -1,4 +1,3 @@
-import p5 from 'p5';
 import { getEnvironments } from '../environments/index.js';
 
 const DEFAULTS = {
@@ -81,22 +80,31 @@ export function createApp(root, experiment) {
   elements.environment.addEventListener('change', resetFromControls);
   [elements.height, elements.velocity, elements.thrust, elements.burn].forEach((input) => input.addEventListener('change', resetFromControls));
 
-  new p5((sketch) => {
-    let stars = [];
-    sketch.setup = () => {
-      const canvas = sketch.createCanvas(elements.canvas.clientWidth || 720, 520);
-      canvas.parent(elements.canvas);
-      sketch.textFont('DM Sans');
-      stars = Array.from({ length: 80 }, (_, index) => ({ x: (index * 83) % 1000, y: (index * 47) % 590, size: 1 + (index % 3) }));
-    };
-    sketch.windowResized = () => sketch.resizeCanvas(elements.canvas.clientWidth, 520);
-    sketch.draw = () => {
-      experiment.step(Math.min(sketch.deltaTime / 1000, 0.05));
-      const snapshot = experiment.snapshot();
-      drawScene(sketch, snapshot, stars);
-      updateReadouts(snapshot, elements);
-    };
-  });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  elements.canvas.append(canvas);
+  const stars = Array.from({ length: 80 }, (_, index) => ({
+    x: (index * 83) % 1000,
+    y: (index * 47) % 590,
+    size: 1 + (index % 3),
+  }));
+  let lastFrame = performance.now();
+
+  const resizeCanvas = () => {
+    canvas.width = elements.canvas.clientWidth || 720;
+    canvas.height = 520;
+  };
+  const frame = (now) => {
+    experiment.step(Math.min((now - lastFrame) / 1000, 0.05));
+    lastFrame = now;
+    const snapshot = experiment.snapshot();
+    drawScene(context, canvas, snapshot, stars);
+    updateReadouts(snapshot, elements);
+    requestAnimationFrame(frame);
+  };
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+  requestAnimationFrame(frame);
 }
 
 function numberValue(input, fallback) {
@@ -117,59 +125,79 @@ function updateReadouts(snapshot, elements) {
   elements.phaseReadout.textContent = capitalize(snapshot.status);
 }
 
-function drawScene(sketch, snapshot, stars) {
+function drawScene(context, canvas, snapshot, stars) {
   const { theme } = snapshot.environment;
-  const context = sketch.drawingContext;
-  const gradient = context.createLinearGradient(0, 0, 0, sketch.height);
+  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
   gradient.addColorStop(0, theme.skyTop);
   gradient.addColorStop(1, theme.skyBottom);
   context.fillStyle = gradient;
-  sketch.noStroke();
-  sketch.rect(0, 0, sketch.width, sketch.height);
+  context.fillRect(0, 0, canvas.width, canvas.height);
 
   if (theme.stars) {
-    sketch.fill(255, 220);
-    stars.forEach((star) => sketch.circle((star.x / 1000) * sketch.width, star.y, star.size));
+    context.fillStyle = 'rgba(255, 255, 255, 0.86)';
+    stars.forEach((star) => {
+      context.beginPath();
+      context.arc((star.x / 1000) * canvas.width, star.y, star.size, 0, Math.PI * 2);
+      context.fill();
+    });
   }
 
-  const groundY = snapshot.groundY / snapshot.worldWidth * sketch.width;
-  const pixelsPerMeter = snapshot.scale * (sketch.width / snapshot.worldWidth);
+  const groundY = snapshot.groundY / snapshot.worldWidth * canvas.width;
+  const pixelsPerMeter = snapshot.scale * (canvas.width / snapshot.worldWidth);
   if (snapshot.environment.ground) {
-    sketch.fill(theme.ground);
-    sketch.rect(0, groundY, sketch.width, sketch.height - groundY);
-    sketch.fill(255, 90);
-    sketch.rect(0, groundY, sketch.width, 2);
+    context.fillStyle = theme.ground;
+    context.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+    context.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    context.fillRect(0, groundY, canvas.width, 2);
   }
 
-  const rocketX = (snapshot.rocket.x / snapshot.worldWidth) * sketch.width;
+  const rocketX = (snapshot.rocket.x / snapshot.worldWidth) * canvas.width;
   const rocketY = groundY - (snapshot.altitude + 1.1) * pixelsPerMeter;
-  sketch.push();
-  sketch.translate(rocketX, rocketY);
-  sketch.noStroke();
-  sketch.fill(theme.accent);
-  sketch.ellipse(0, -pixelsPerMeter * 0.7, pixelsPerMeter * 0.62, pixelsPerMeter * 0.9);
-  sketch.fill('#f7f4ed');
-  sketch.rectMode(sketch.CENTER);
-  sketch.rect(0, pixelsPerMeter * 0.28, pixelsPerMeter * 0.54, pixelsPerMeter * 1.15, 8);
-  sketch.fill('#17324d');
-  sketch.circle(0, pixelsPerMeter * 0.18, pixelsPerMeter * 0.2);
+  context.save();
+  context.translate(rocketX, rocketY);
+  context.fillStyle = theme.accent;
+  context.beginPath();
+  context.ellipse(0, -pixelsPerMeter * 0.7, pixelsPerMeter * 0.31, pixelsPerMeter * 0.45, 0, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = '#f7f4ed';
+  roundedRect(context, -pixelsPerMeter * 0.27, pixelsPerMeter * 0.28 - pixelsPerMeter * 0.575, pixelsPerMeter * 0.54, pixelsPerMeter * 1.15, 8);
+  context.fillStyle = '#17324d';
+  context.beginPath();
+  context.arc(0, pixelsPerMeter * 0.18, pixelsPerMeter * 0.1, 0, Math.PI * 2);
+  context.fill();
   if (snapshot.status === 'burning') {
-    sketch.fill('#ffc857');
-    sketch.triangle(-pixelsPerMeter * 0.15, pixelsPerMeter * 0.88, pixelsPerMeter * 0.15, pixelsPerMeter * 0.88, 0, pixelsPerMeter * 1.5 + Math.sin(snapshot.time * 18) * 4);
-    sketch.fill('#ef6f45');
-    sketch.triangle(-pixelsPerMeter * 0.08, pixelsPerMeter * 0.88, pixelsPerMeter * 0.08, pixelsPerMeter * 0.88, 0, pixelsPerMeter * 1.28);
+    triangle(context, '#ffc857', -pixelsPerMeter * 0.15, pixelsPerMeter * 0.88, pixelsPerMeter * 0.15, pixelsPerMeter * 0.88, 0, pixelsPerMeter * 1.5 + Math.sin(snapshot.time * 18) * 4);
+    triangle(context, '#ef6f45', -pixelsPerMeter * 0.08, pixelsPerMeter * 0.88, pixelsPerMeter * 0.08, pixelsPerMeter * 0.88, 0, pixelsPerMeter * 1.28);
   }
-  sketch.pop();
+  context.restore();
 
-  sketch.stroke(255, 190);
-  sketch.strokeWeight(1);
-  sketch.line(26, groundY - snapshot.altitude * pixelsPerMeter, 26, groundY);
-  sketch.noStroke();
-  sketch.fill(255, 220);
-  sketch.textSize(12);
-  sketch.text(`${snapshot.altitude.toFixed(1)} m`, 38, groundY - snapshot.altitude * pixelsPerMeter - 8);
-  sketch.fill(255, 150);
-  sketch.text('launch altitude', 38, groundY - 10);
+  context.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(26, groundY - snapshot.altitude * pixelsPerMeter);
+  context.lineTo(26, groundY);
+  context.stroke();
+  context.fillStyle = 'rgba(255, 255, 255, 0.86)';
+  context.font = '12px "DM Sans", sans-serif';
+  context.fillText(`${snapshot.altitude.toFixed(1)} m`, 38, groundY - snapshot.altitude * pixelsPerMeter - 8);
+  context.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  context.fillText('launch altitude', 38, groundY - 10);
+}
+
+function triangle(context, color, x1, y1, x2, y2, x3, y3) {
+  context.fillStyle = color;
+  context.beginPath();
+  context.moveTo(x1, y1);
+  context.lineTo(x2, y2);
+  context.lineTo(x3, y3);
+  context.closePath();
+  context.fill();
+}
+
+function roundedRect(context, x, y, width, height, radius) {
+  context.beginPath();
+  context.roundRect(x, y, width, height, radius);
+  context.fill();
 }
 
 function capitalize(value) {
