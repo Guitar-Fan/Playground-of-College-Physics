@@ -17,7 +17,7 @@ export function createApp(root, experiment) {
           <h1>Rocket launch lab</h1>
           <p class="lede">Tune the launch, compare worlds, and watch the equations become motion.</p>
         </div>
-        <div class="status-chip" id="status-chip"><span class="status-dot"></span><span id="status-label">Ready</span></div>
+        <div class="status-chip" id="status-chip" data-status="ready"><span class="status-dot"></span><span id="status-label" aria-live="polite">Ready</span></div>
       </header>
       <section class="workspace">
         <div class="stage-panel">
@@ -52,6 +52,7 @@ export function createApp(root, experiment) {
     run: root.querySelector('#run-button'),
     pause: root.querySelector('#pause-button'),
     reset: root.querySelector('#reset-button'),
+    statusChip: root.querySelector('#status-chip'),
     status: root.querySelector('#status-label'),
     environmentLabel: root.querySelector('#environment-label'),
     heightReadout: root.querySelector('#height-readout'),
@@ -106,6 +107,7 @@ function numberValue(input, fallback) {
 function updateReadouts(snapshot, elements) {
   const environmentName = snapshot.environment.name;
   elements.status.textContent = capitalize(snapshot.status);
+  elements.statusChip.dataset.status = snapshot.status;
   elements.environmentLabel.textContent = `${environmentName} / ${snapshot.environment.gravity.toFixed(2)} m/s²`;
   elements.heightReadout.textContent = `${snapshot.altitude.toFixed(1)} m`;
   elements.velocityReadout.textContent = `${snapshot.velocity.toFixed(1)} m/s`;
